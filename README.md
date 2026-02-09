@@ -13,13 +13,16 @@ A Home Assistant integration that combines Google Nest and Matter thermostat ent
 
 ## Prerequisites
 
-### 1. Google Nest Integration
+### 1. Home Assistant
+- **Home Assistant 2026.2.1** or newer is required.
+
+### 2. Google Nest Integration
 The [Google Nest integration](https://www.home-assistant.io/integrations/nest/) must be configured and your thermostat added to Home Assistant.
 
-### 2. Matter Integration
+### 3. Matter Integration
 The [Matter integration](https://www.home-assistant.io/integrations/matter/) must be enabled in Home Assistant.
 
-### 3. Supported Hardware
+### 4. Supported Hardware
 - **Google Nest Learning Thermostat (4th Generation)** - This is the only supported model as it's the only Nest thermostat with Matter support.
 
 ## Setup Instructions
@@ -65,18 +68,20 @@ For auto-discovery to work properly, you need to rename your Matter thermostat e
 
 ## How It Works
 
-The integration creates a unified climate entity that intelligently routes commands to the appropriate underlying entity:
+The integration creates a unified climate entity that intelligently routes commands to the appropriate underlying entity. The entity is **push-based** — it subscribes to state change events from both source entities and updates instantly, with no polling.
+
+Each unified thermostat appears as a proper device in the Home Assistant device registry.
 
 ### Temperature Control → Matter Entity
-- **Why**: Matter integration has no rate limits and provides faster response
+- **Why**: Matter operates locally with no rate limits and provides faster response
 - **Used for**: Setting target temperature, reading current temperature
 
-### HVAC & Fan Control → Google Nest Entity  
+### HVAC & Fan Control → Google Nest Entity
 - **Why**: Google Nest integration provides full feature access
-- **Used for**: Changing HVAC modes (heat, cool, auto), fan settings, accessing humidity data
+- **Used for**: Changing HVAC modes (heat, cool, auto), fan settings, turn on/off, accessing humidity data
 
 ### State Display
-- **Current Temperature**: From Matter entity (more responsive)
+- **Current Temperature**: From Matter entity (local, more responsive)
 - **Target Temperature**: From Matter entity
 - **HVAC Mode**: From Google Nest entity
 - **Fan Mode**: From Google Nest entity

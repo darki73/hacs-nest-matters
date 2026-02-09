@@ -1,9 +1,9 @@
 {
     "name": "Nest Matters",
-    "homeassistant": "2025.7.0",
+    "homeassistant": "2026.2.1",
     "content_in_root": false,
     "render_readme": true,
     "domains": ["climate"],
-    "iot_class": "Local Polling",
+    "iot_class": "Local Push",
     "config_flow": true
 }

@@ -2,40 +2,46 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS
+from .const import PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+
+@dataclass
+class NestMattersData:
+    """Runtime data for Nest Matters integration."""
+
+    matter_entity: str
+    google_entity: str
+    name: str
+
+
+type NestMattersConfigEntry = ConfigEntry[NestMattersData]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: NestMattersConfigEntry) -> bool:
     """Set up Nest Matters from a config entry."""
     _LOGGER.debug("Setting up Nest Matters integration")
-    
-    # Store the config entry data
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = entry.data
-    
-    # Set up the climate platform
+
+    entry.runtime_data = NestMattersData(
+        matter_entity=entry.data["matter_entity"],
+        google_entity=entry.data["google_entity"],
+        name=entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, "Unified Thermostat")),
+    )
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    
+
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+
+async def async_unload_entry(hass: HomeAssistant, entry: NestMattersConfigEntry) -> bool:
     """Unload a config entry."""
     _LOGGER.debug("Unloading Nest Matters integration")
-    
-    # Unload the climate platform
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
-    
-    return unload_ok
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry."""
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
