@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.1] - 2026-02-10
+### Fixed
+- Fixed temperature unit double-conversion for Fahrenheit users — entity now reads the HA system's configured unit instead of hardcoding Celsius (fixes #1)
+
 ## [1.1.0] - 2026-02-09
 ### Changed
 - Updated for Home Assistant 2026.2.1 compatibility
