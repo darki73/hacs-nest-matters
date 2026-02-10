@@ -24,6 +24,12 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+_BASE_FEATURES = (
+    ClimateEntityFeature.TARGET_TEMPERATURE
+    | ClimateEntityFeature.TURN_ON
+    | ClimateEntityFeature.TURN_OFF
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -46,17 +52,20 @@ async def async_setup_entry(
 
 
 class NestMattersClimate(ClimateEntity):
-    """Unified climate entity combining Matter and Google Nest."""
+    """Unified climate entity combining Matter and Google Nest.
+
+    Implements full failover between source entities:
+    - Temperature: prefer Matter (local, fast), fall back to Google
+    - HVAC mode: prefer Google (full features), fall back to Matter
+    - Fan/humidity: Google only (no Matter equivalent)
+    - Supported features: FAN_MODE toggled dynamically based on Google availability
+    - Availability: requires at least one source entity to be reachable
+    """
 
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_name = None
-    _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.FAN_MODE
-        | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TURN_OFF
-    )
+    _attr_supported_features = _BASE_FEATURES | ClimateEntityFeature.FAN_MODE
 
     def __init__(
         self,
@@ -117,117 +126,133 @@ class NestMattersClimate(ClimateEntity):
         self._async_update_attrs()
         self.async_write_ha_state()
 
+    def _is_entity_available(self, entity_id: str) -> bool:
+        """Check if a source entity is available."""
+        state = self.hass.states.get(entity_id)
+        return state is not None and state.state != "unavailable"
+
     @callback
     def _async_update_attrs(self) -> None:
-        """Update all cached attributes from source entity states."""
+        """Update all cached attributes from source entity states.
+
+        Implements failover: prefers the primary source for each data category,
+        falls back to the other source when the primary is unavailable.
+        """
         matter_state = self.hass.states.get(self._matter_entity_id)
         google_state = self.hass.states.get(self._google_entity_id)
 
-        # Availability: both source entities must be present and not unavailable
-        self._attr_available = (
-            matter_state is not None
-            and matter_state.state != "unavailable"
-            and google_state is not None
-            and google_state.state != "unavailable"
+        matter_available = (
+            matter_state is not None and matter_state.state != "unavailable"
+        )
+        google_available = (
+            google_state is not None and google_state.state != "unavailable"
         )
 
-        # From Matter entity (temperature data — fast local reads, no rate limits)
-        if matter_state and matter_state.attributes:
+        self._attr_available = matter_available or google_available
+
+        # --- Temperature: prefer Matter (local, fast), fall back to Google ---
+        if matter_available and matter_state.attributes:
             matter_attrs = matter_state.attributes
             self._attr_current_temperature = matter_attrs.get("current_temperature")
             self._attr_target_temperature = matter_attrs.get("temperature")
             self._attr_min_temp = matter_attrs.get("min_temp", 7)
             self._attr_max_temp = matter_attrs.get("max_temp", 35)
-        else:
-            self._attr_current_temperature = None
-            self._attr_target_temperature = None
-            self._attr_min_temp = 7
-            self._attr_max_temp = 35
+        elif google_available and google_state.attributes:
+            google_attrs = google_state.attributes
+            self._attr_current_temperature = google_attrs.get("current_temperature")
+            self._attr_target_temperature = google_attrs.get("temperature")
+            self._attr_min_temp = google_attrs.get("min_temp", 7)
+            self._attr_max_temp = google_attrs.get("max_temp", 35)
 
-        # From Google entity (HVAC/fan data — full feature set)
-        if google_state:
+        # --- HVAC mode: prefer Google (full features), fall back to Matter ---
+        if google_available and google_state.state:
             self._attr_hvac_mode = google_state.state
             if google_state.attributes:
-                google_attrs = google_state.attributes
-                self._attr_hvac_modes = google_attrs.get("hvac_modes", [])
-                self._attr_fan_mode = google_attrs.get("fan_mode")
-                self._attr_fan_modes = google_attrs.get("fan_modes", [])
-                self._attr_current_humidity = google_attrs.get("current_humidity")
-            else:
-                self._attr_hvac_modes = []
-                self._attr_fan_mode = None
-                self._attr_fan_modes = []
-                self._attr_current_humidity = None
-        else:
-            self._attr_hvac_mode = None
-            self._attr_hvac_modes = []
-            self._attr_fan_mode = None
-            self._attr_fan_modes = []
-            self._attr_current_humidity = None
+                self._attr_hvac_modes = google_state.attributes.get(
+                    "hvac_modes", []
+                )
+        elif matter_available and matter_state.state:
+            self._attr_hvac_mode = matter_state.state
+            if matter_state.attributes:
+                self._attr_hvac_modes = matter_state.attributes.get(
+                    "hvac_modes", []
+                )
 
-    def _check_entity_available(self, entity_id: str) -> None:
-        """Raise if a source entity is unavailable."""
-        state = self.hass.states.get(entity_id)
-        if state is None or state.state == "unavailable":
+        # --- Fan / humidity: Google only (no Matter equivalent) ---
+        if google_available and google_state.attributes:
+            google_attrs = google_state.attributes
+            self._attr_fan_mode = google_attrs.get("fan_mode")
+            self._attr_fan_modes = google_attrs.get("fan_modes", [])
+            self._attr_current_humidity = google_attrs.get("current_humidity")
+
+        # --- Dynamic features: toggle FAN_MODE based on Google availability ---
+        if google_available:
+            self._attr_supported_features = (
+                _BASE_FEATURES | ClimateEntityFeature.FAN_MODE
+            )
+        else:
+            self._attr_supported_features = _BASE_FEATURES
+
+    async def _async_call_service(
+        self,
+        service: str,
+        data: dict[str, Any],
+        primary_entity_id: str,
+        fallback_entity_id: str,
+    ) -> None:
+        """Call a climate service with failover between source entities."""
+        if self._is_entity_available(primary_entity_id):
+            target_id = primary_entity_id
+        elif self._is_entity_available(fallback_entity_id):
+            _LOGGER.info(
+                "Primary entity %s unavailable for %s, falling back to %s",
+                primary_entity_id,
+                service,
+                fallback_entity_id,
+            )
+            target_id = fallback_entity_id
+        else:
             raise HomeAssistantError(
-                f"Cannot perform action: source entity {entity_id} is unavailable"
+                f"Cannot {service}: both source entities are unavailable"
             )
 
+        data["entity_id"] = target_id
+        await self.hass.services.async_call(
+            "climate",
+            service,
+            data,
+            blocking=True,
+            context=self._context,
+        )
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set temperature via Matter entity (avoid rate limits)."""
+        """Set temperature — prefer Matter, fall back to Google."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
 
-        self._check_entity_available(self._matter_entity_id)
-
-        _LOGGER.debug(
-            "Setting temperature to %s via Matter entity %s",
-            temperature,
-            self._matter_entity_id,
-        )
-
-        await self.hass.services.async_call(
-            "climate",
+        await self._async_call_service(
             "set_temperature",
-            {
-                "entity_id": self._matter_entity_id,
-                "temperature": temperature,
-            },
-            blocking=True,
-            context=self._context,
+            {"temperature": temperature},
+            self._matter_entity_id,
+            self._google_entity_id,
         )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set HVAC mode via Google entity (full features)."""
-        self._check_entity_available(self._google_entity_id)
-
-        _LOGGER.debug(
-            "Setting HVAC mode to %s via Google entity %s",
-            hvac_mode,
-            self._google_entity_id,
-        )
-
-        await self.hass.services.async_call(
-            "climate",
+        """Set HVAC mode — prefer Google, fall back to Matter."""
+        await self._async_call_service(
             "set_hvac_mode",
-            {
-                "entity_id": self._google_entity_id,
-                "hvac_mode": hvac_mode,
-            },
-            blocking=True,
-            context=self._context,
+            {"hvac_mode": hvac_mode},
+            self._google_entity_id,
+            self._matter_entity_id,
         )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        """Set fan mode via Google entity."""
-        self._check_entity_available(self._google_entity_id)
-
-        _LOGGER.debug(
-            "Setting fan mode to %s via Google entity %s",
-            fan_mode,
-            self._google_entity_id,
-        )
+        """Set fan mode — Google only (no Matter equivalent)."""
+        if not self._is_entity_available(self._google_entity_id):
+            raise HomeAssistantError(
+                "Cannot set fan mode: Google Nest entity is unavailable"
+            )
 
         await self.hass.services.async_call(
             "climate",
@@ -241,41 +266,19 @@ class NestMattersClimate(ClimateEntity):
         )
 
     async def async_turn_on(self) -> None:
-        """Turn on via Google entity.
-
-        Delegate directly to the Google Nest entity rather than using
-        the base class default, which only handles the 2-mode case.
-        Nest thermostats typically have 4+ HVAC modes (OFF, HEAT, COOL,
-        HEAT_COOL), so the default would raise NotImplementedError.
-        """
-        self._check_entity_available(self._google_entity_id)
-
-        _LOGGER.debug(
-            "Turning on via Google entity %s",
-            self._google_entity_id,
-        )
-
-        await self.hass.services.async_call(
-            "climate",
+        """Turn on — prefer Google, fall back to Matter."""
+        await self._async_call_service(
             "turn_on",
-            {"entity_id": self._google_entity_id},
-            blocking=True,
-            context=self._context,
+            {},
+            self._google_entity_id,
+            self._matter_entity_id,
         )
 
     async def async_turn_off(self) -> None:
-        """Turn off via Google entity."""
-        self._check_entity_available(self._google_entity_id)
-
-        _LOGGER.debug(
-            "Turning off via Google entity %s",
-            self._google_entity_id,
-        )
-
-        await self.hass.services.async_call(
-            "climate",
+        """Turn off — prefer Google, fall back to Matter."""
+        await self._async_call_service(
             "turn_off",
-            {"entity_id": self._google_entity_id},
-            blocking=True,
-            context=self._context,
+            {},
+            self._google_entity_id,
+            self._matter_entity_id,
         )

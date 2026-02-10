@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.0] - 2026-02-10
+### Added
+- Full failover between source entities — temperature reads fall back from Matter to Google, HVAC/fan control falls back from Google to Matter
+- Dynamic feature toggling — `FAN_MODE` is removed from supported features when Google is unavailable and restored when it recovers
+- Shared `_async_call_service` helper with automatic primary/fallback routing and logging
+
+### Changed
+- Availability now requires only one source entity (was both) — entity stays functional during single-source outages
+- Service calls (`set_temperature`, `set_hvac_mode`, `turn_on`, `turn_off`) now automatically fail over to the other source entity instead of raising immediately
+
 ## [1.1.1] - 2026-02-10
 ### Fixed
 - Fixed temperature unit double-conversion for Fahrenheit users — entity now reads the HA system's configured unit instead of hardcoding Celsius (fixes #1)
