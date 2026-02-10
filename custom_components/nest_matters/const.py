@@ -2,7 +2,7 @@
 from homeassistant.const import Platform
 
 DOMAIN = "nest_matters"
-PLATFORMS = [Platform.CLIMATE]
+PLATFORMS = [Platform.CLIMATE, Platform.SENSOR]
 
 # Configuration keys
 CONF_MATTER_ENTITY = "matter_entity"

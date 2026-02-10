@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.0] - 2026-02-10
+### Added
+- Source routing attributes (`temperature_source`, `hvac_source`, `fan_source`) exposed via climate entity state attributes
+- Diagnostic sensor entities for source routing — appear in the device's Diagnostic section, showing which source is active for temperature, HVAC, and fan data (e.g. `matter`, `google (fallback)`, `unavailable`)
+
 ## [1.2.1] - 2026-02-10
 ### Fixed
 - Fixed entity registration failure caused by missing class-level `_attr_temperature_unit` default — HA's `capability_attributes` reads `temperature_unit` before `async_added_to_hass` runs

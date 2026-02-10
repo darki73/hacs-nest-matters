@@ -100,6 +100,11 @@ class NestMattersClimate(ClimateEntity):
         self._attr_current_humidity = None
         self._attr_available = False
 
+        # Source routing indicators (exposed via extra_state_attributes)
+        self._temperature_source: str = "unavailable"
+        self._hvac_source: str = "unavailable"
+        self._fan_source: str = "unavailable"
+
     async def async_added_to_hass(self) -> None:
         """Subscribe to source entity state changes."""
         # Source entity state attributes contain temperatures already converted
@@ -158,12 +163,16 @@ class NestMattersClimate(ClimateEntity):
             self._attr_target_temperature = matter_attrs.get("temperature")
             self._attr_min_temp = matter_attrs.get("min_temp", 7)
             self._attr_max_temp = matter_attrs.get("max_temp", 35)
+            self._temperature_source = "matter"
         elif google_available and google_state.attributes:
             google_attrs = google_state.attributes
             self._attr_current_temperature = google_attrs.get("current_temperature")
             self._attr_target_temperature = google_attrs.get("temperature")
             self._attr_min_temp = google_attrs.get("min_temp", 7)
             self._attr_max_temp = google_attrs.get("max_temp", 35)
+            self._temperature_source = "google (fallback)"
+        else:
+            self._temperature_source = "unavailable"
 
         # --- HVAC mode: prefer Google (full features), fall back to Matter ---
         if google_available and google_state.state:
@@ -172,12 +181,16 @@ class NestMattersClimate(ClimateEntity):
                 self._attr_hvac_modes = google_state.attributes.get(
                     "hvac_modes", []
                 )
+            self._hvac_source = "google"
         elif matter_available and matter_state.state:
             self._attr_hvac_mode = matter_state.state
             if matter_state.attributes:
                 self._attr_hvac_modes = matter_state.attributes.get(
                     "hvac_modes", []
                 )
+            self._hvac_source = "matter (fallback)"
+        else:
+            self._hvac_source = "unavailable"
 
         # --- Fan / humidity: Google only (no Matter equivalent) ---
         if google_available and google_state.attributes:
@@ -185,6 +198,9 @@ class NestMattersClimate(ClimateEntity):
             self._attr_fan_mode = google_attrs.get("fan_mode")
             self._attr_fan_modes = google_attrs.get("fan_modes", [])
             self._attr_current_humidity = google_attrs.get("current_humidity")
+            self._fan_source = "google"
+        else:
+            self._fan_source = "unavailable"
 
         # --- Dynamic features: toggle FAN_MODE based on Google availability ---
         if google_available:
@@ -193,6 +209,15 @@ class NestMattersClimate(ClimateEntity):
             )
         else:
             self._attr_supported_features = _BASE_FEATURES
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Expose which source entity is active for each data category."""
+        return {
+            "temperature_source": self._temperature_source,
+            "hvac_source": self._hvac_source,
+            "fan_source": self._fan_source,
+        }
 
     async def _async_call_service(
         self,
