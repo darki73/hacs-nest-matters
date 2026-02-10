@@ -115,6 +115,38 @@ If auto-discovery doesn't work, you can manually select:
 2. Check that the Matter integration is properly connected
 3. Ensure the thermostat is not in an error state
 
+### Matter Entities Unavailable (Proxmox Users)
+
+If your Matter entities are constantly unavailable while the Google Nest entities work fine, and you see `Unable to establish CASE session` errors in the Matter server logs — this is almost certainly caused by **multicast snooping** on the Proxmox bridge.
+
+**Symptoms:**
+- Matter server discovers devices via mDNS but CASE sessions always time out
+- All Matter nodes fail simultaneously
+- Google Nest (cloud) integration works fine for the same devices
+
+**Cause:** With multicast snooping enabled, the Proxmox bridge filters IPv6 Neighbor Discovery packets, preventing the Matter server from establishing direct connections to devices — even though mDNS discovery (multicast) still works.
+
+**Fix:** Disable multicast snooping on the bridge. On the Proxmox host:
+
+```bash
+# Immediate (non-persistent)
+echo 0 > /sys/devices/virtual/net/vmbr0/bridge/multicast_snooping
+```
+
+Then restart the Matter integration in HA. If Matter recovers, make it persistent by adding `bridge-mcsnoop 0` to your bridge config in `/etc/network/interfaces`:
+
+```
+auto vmbr0
+iface vmbr0 inet static
+    ...
+    bridge-ports <your-interface>
+    bridge-stp off
+    bridge-fd 0
+    bridge-mcsnoop 0
+```
+
+> **Note**: Disabling multicast snooping makes the bridge forward multicast to all ports (like broadcast). On a typical home Proxmox setup with a handful of VMs, the extra traffic is negligible. The setting is also instantly reversible: `echo 1 > /sys/devices/virtual/net/vmbr0/bridge/multicast_snooping`
+
 ## Advanced Usage
 
 ### Multiple Thermostats
