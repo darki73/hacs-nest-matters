@@ -51,7 +51,6 @@ class NestMattersClimate(ClimateEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_name = None
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.FAN_MODE
@@ -93,6 +92,11 @@ class NestMattersClimate(ClimateEntity):
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to source entity state changes."""
+        # Source entity state attributes contain temperatures already converted
+        # to the HA system unit. Declare the same unit to prevent
+        # double-conversion (e.g. treating 72°F as 72°C → 161.6°F).
+        self._attr_temperature_unit = self.hass.config.units.temperature_unit
+
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass,
