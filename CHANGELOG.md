@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.1] - 2026-02-10
+### Fixed
+- Fixed entity registration failure caused by missing class-level `_attr_temperature_unit` default — HA's `capability_attributes` reads `temperature_unit` before `async_added_to_hass` runs
+
 ## [1.2.0] - 2026-02-10
 ### Added
 - Full failover between source entities — temperature reads fall back from Matter to Google, HVAC/fan control falls back from Google to Matter

@@ -65,6 +65,7 @@ class NestMattersClimate(ClimateEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = _BASE_FEATURES | ClimateEntityFeature.FAN_MODE
 
     def __init__(
