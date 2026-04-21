@@ -19,6 +19,7 @@ _SOURCE_SENSORS: list[tuple[str, str, str, str | None]] = [
     ("temperature_source", "Temperature Source", "matter", "google"),
     ("hvac_source", "HVAC Source", "google", "matter"),
     ("fan_source", "Fan Source", "google", None),
+    ("hvac_action_source", "HVAC Action Source", "google", None),
 ]
 
 

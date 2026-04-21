@@ -92,6 +92,7 @@ class NestMattersClimate(ClimateEntity):
         # but must exist before the first state write during entity registration.
         self._attr_hvac_mode = None
         self._attr_hvac_modes = []
+        self._attr_hvac_action = None
         self._attr_fan_mode = None
         self._attr_fan_modes = []
         self._attr_target_temperature = None
@@ -103,6 +104,7 @@ class NestMattersClimate(ClimateEntity):
         # Source routing indicators (exposed via extra_state_attributes)
         self._temperature_source: str = "unavailable"
         self._hvac_source: str = "unavailable"
+        self._hvac_action_source: str = "unavailable"
         self._fan_source: str = "unavailable"
 
     async def async_added_to_hass(self) -> None:
@@ -192,6 +194,14 @@ class NestMattersClimate(ClimateEntity):
         else:
             self._hvac_source = "unavailable"
 
+        # --- HVAC action: Google only (no Matter equivalent) ---
+        if google_available and google_state.attributes:
+            google_attrs = google_state.attributes
+            self._attr_hvac_action = google_attrs.get("hvac_action")
+            self._hvac_action_source = "google"
+        else:
+            self._hvac_action_source = "unavailable"
+
         # --- Fan / humidity: Google only (no Matter equivalent) ---
         if google_available and google_state.attributes:
             google_attrs = google_state.attributes
@@ -202,12 +212,13 @@ class NestMattersClimate(ClimateEntity):
         else:
             self._fan_source = "unavailable"
 
-        # --- Dynamic features: toggle FAN_MODE based on Google availability ---
+        # --- Dynamic features: toggle FAN_MODE or hvac_action based on Google availability ---
         if google_available:
             self._attr_supported_features = (
                 _BASE_FEATURES | ClimateEntityFeature.FAN_MODE
             )
         else:
+            self._attr_hvac_action = None
             self._attr_supported_features = _BASE_FEATURES
 
     @property
@@ -216,6 +227,7 @@ class NestMattersClimate(ClimateEntity):
         return {
             "temperature_source": self._temperature_source,
             "hvac_source": self._hvac_source,
+            "hvac_action_source": self._hvac_action_source,
             "fan_source": self._fan_source,
         }
 
