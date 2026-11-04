@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityFeature,
+    HVACAction,
     HVACMode,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
@@ -98,12 +99,14 @@ class NestMattersClimate(ClimateEntity):
         self._attr_min_temp = 7
         self._attr_max_temp = 35
         self._attr_current_humidity = None
+        self._attr_hvac_action = None
         self._attr_available = False
 
         # Source routing indicators (exposed via extra_state_attributes)
         self._temperature_source: str = "unavailable"
         self._hvac_source: str = "unavailable"
         self._fan_source: str = "unavailable"
+        self._hvac_action_source: str = "unavailable"
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to source entity state changes."""
@@ -202,6 +205,26 @@ class NestMattersClimate(ClimateEntity):
         else:
             self._fan_source = "unavailable"
 
+        # --- HVAC action: Google only (Matter does not expose hvac_action) ---
+        action = None
+        if google_available and google_state is not None:
+            action = google_state.attributes.get("hvac_action")
+        if action is not None:
+            try:
+                self._attr_hvac_action = HVACAction(action)
+                self._hvac_action_source = "google"
+            except ValueError:
+                _LOGGER.debug(
+                    "Unknown hvac_action %r reported by %s",
+                    action,
+                    self._google_entity_id,
+                )
+                self._attr_hvac_action = None
+                self._hvac_action_source = "unavailable"
+        else:
+            self._attr_hvac_action = None
+            self._hvac_action_source = "unavailable"
+
         # --- Dynamic features: toggle FAN_MODE based on Google availability ---
         if google_available:
             self._attr_supported_features = (
@@ -217,6 +240,7 @@ class NestMattersClimate(ClimateEntity):
             "temperature_source": self._temperature_source,
             "hvac_source": self._hvac_source,
             "fan_source": self._fan_source,
+            "hvac_action_source": self._hvac_action_source,
         }
 
     async def _async_call_service(
